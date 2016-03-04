@@ -209,7 +209,8 @@ class Repo(object):
 
         return rv
 
-    def install(self, package, python=None, editable=False, system_site_packages=False):
+    def install(self, package, python=None, editable=False, system_site_packages=False,
+                virtualenv=False):
         package, install_args = self.resolve_package(package, python)
 
         venv_path = self.get_package_path(package)
@@ -229,16 +230,20 @@ class Repo(object):
                 pass
             return False
 
-        # Install virtualenv, use the pipsi used python version by default
-        args = ['virtualenv', '-p', python or sys.executable, venv_path]
+        # Try to install the virtualenv through python3 module first, fallback
+        # to virtualenv, use the pipsi used python version by default
+        args_py3 = [python or sys.executable, '-m', 'venv' , venv_path]
+        args_virtual = ['virtualenv', '-p', python or sys.executable, venv_path]
 
         if system_site_packages:
-            args.append('--system-site-packages')
+            args_py3.append('--system-site-packages')
+            args_virtual.append('--system-site-packages')
 
         try:
-            if Popen(args).wait() != 0:
-                click.echo('Failed to create virtualenv.  Aborting.')
-                return _cleanup()
+            if virtualenv or Popen(args_py3).wait() != 0:
+                if Popen(args_virtual).wait() != 0:
+                    click.echo('Failed to create virtualenv. Aborting.')
+                    return _cleanup()
 
             args = [os.path.join(venv_path, BIN_DIR, 'pip'), 'install']
             if editable:
@@ -347,15 +352,17 @@ def cli(ctx, home, bin_dir):
 @click.option('--system-site-packages', is_flag=True,
               help='Give the virtual environment access to the global '
                    'site-packages.')
+@click.option('--virtualenv', is_flag=True,
+              help='For python3 use virtualenv instead of venv module')
 @click.pass_obj
-def install(repo, package, python, editable, system_site_packages):
+def install(repo, package, python, editable, system_site_packages, virtualenv):
     """Installs scripts from a Python package.
 
     Given a package this will install all the scripts and their dependencies
     of the given Python package into a new virtualenv and symlinks the
     discovered scripts into BIN_DIR (defaults to ~/.local/bin).
     """
-    if repo.install(package, python, editable, system_site_packages):
+    if repo.install(package, python, editable, system_site_packages, virtualenv):
         click.echo('Done.')
     else:
         sys.exit(1)
